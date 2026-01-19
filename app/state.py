@@ -1,0 +1,10 @@
+from typing import TypedDict, Optional, List, Annotated
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+
+class AgentState(TypedDict):
+    input_text: Optional[str]
+    input_audio_path: Optional[str]
+    response_text: Optional[str]
+    response_audio_path: Optional[str]
+    messages: Annotated[list, add_messages]

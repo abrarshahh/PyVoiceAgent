@@ -1,0 +1,14 @@
+fastapi[standard]
+uvicorn
+python-multipart
+langgraph
+langchain
+langchain-ollama
+python-dotenv
+chatterbox-tts
+soundfile
+numpy
+torch
+torchaudio
+faster-whisper
+emoji
