@@ -2,7 +2,7 @@ import shutil
 import os
 import uuid
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -22,7 +22,7 @@ logger.info("FastAPI app initialized.")
 
 class TextRequest(BaseModel):
     text: str
-    thread_id: str = None
+    session_id: str = None
 
 INPUT_AUDIO_DIR = Path("input_audio")
 INPUT_AUDIO_DIR.mkdir(exist_ok=True)
@@ -32,11 +32,18 @@ async def chat_text(request: TextRequest):
     """
     Process text input and return a voice response.
     """
-    thread_id = request.thread_id or str(uuid.uuid4())
+    # Use provided session_id or generate a new one
+    session_id = request.session_id or str(uuid.uuid4())
+    
+    # Use a unique thread_id for the graph to ensure we start with a clean state
+    # (Memory is now handled by SQLite via session_id)
+    thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     
-    # Only pass new input. History is managed by MemorySaver.
-    initial_state = {"input_text": request.text}
+    initial_state = {
+        "input_text": request.text,
+        "session_id": session_id
+    }
     
     # Run the graph
     final_state = app_graph.invoke(initial_state, config=config)
@@ -45,14 +52,14 @@ async def chat_text(request: TextRequest):
     if not audio_path or not os.path.exists(audio_path):
         raise HTTPException(status_code=500, detail="Failed to generate audio response.")
         
-    # Return audio with thread_id header so client knows the ID
-    headers = {"X-Thread-ID": thread_id}
+    # Return audio with session_id header
+    headers = {"X-Session-ID": session_id}
     return FileResponse(audio_path, media_type="audio/wav", filename="response.wav", headers=headers)
 
 @app.post("/chat/voice")
 async def chat_voice(
     file: UploadFile = File(...),
-    thread_id: str = None
+    session_id: str = Form(None)
 ):
     """
     Process voice input (audio file) and return a voice response.
@@ -65,10 +72,14 @@ async def chat_voice(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    thread_id = thread_id or str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
+    thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
         
-    initial_state = {"input_audio_path": str(file_path)}
+    initial_state = {
+        "input_audio_path": str(file_path),
+        "session_id": session_id
+    }
     
     # Run the graph
     final_state = app_graph.invoke(initial_state, config=config)
@@ -80,7 +91,7 @@ async def chat_voice(
     if not audio_path or not os.path.exists(audio_path):
         raise HTTPException(status_code=500, detail="Failed to generate audio response.")
         
-    headers = {"X-Thread-ID": thread_id}
+    headers = {"X-Session-ID": session_id}
     return FileResponse(audio_path, media_type="audio/wav", filename="response.wav", headers=headers)
 
 @app.get("/")

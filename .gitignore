@@ -39,3 +39,8 @@ input_audio/
 generated_audio/
 logs/
 
+
+# Database files
+*.sqlite3
+*.db
+*.db-journal

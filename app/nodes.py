@@ -1,10 +1,14 @@
 import os
 import uuid
+import re
+import emoji
 from pathlib import Path
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.state import AgentState
+from app.logger_config import get_logger
+from app.database import get_cumulative_context, save_interaction
 
 # Chatterbox imports
 from chatterbox.tts import ChatterboxTTS
@@ -12,6 +16,8 @@ import soundfile as sf
 
 # Faster Whisper imports
 from faster_whisper import WhisperModel
+
+logger = get_logger(__name__)
 
 # Initialize Local STT (Faster Whisper)
 # Using 'base' model for speed/quality balance locally. 
@@ -50,44 +56,28 @@ def transcribe_audio(state: AgentState) -> AgentState:
     
     return {"input_text": transcription_text}
 
-import re
-import emoji
-from app.logger_config import get_logger
-
-logger = get_logger(__name__)
-
 def process_input(state: AgentState) -> AgentState:
     """Node to process text input and generate a textual response."""
     text = state.get("input_text", "")
-    messages = state.get("messages", [])
+    session_id = state.get("session_id")
     
     logger.info("Processing input text.")
     logger.agent_output(f"User Input: {text}")
     
-    # Simple prompt for the agent
-    system_message = SystemMessage(content="You are a helpful voice assistant. Keep your responses concise and conversational.")
+    # Retrieve persistent context from SQLite
+    past_context = ""
+    if session_id:
+        past_context = get_cumulative_context(session_id)
     
-    # If using add_messages, we don't need to manually manage the whole list in the invocation
-    # But usually for the LLM invoke, we pass everything.
-    # If the state already has messages, use them. If empty (new thread), add system.
+    # Construct system prompt with history
+    system_content = "You are a helpful voice assistant. Keep your responses concise and conversational."
+    if past_context:
+        system_content += f"\n\nPrevious conversation history:\n{past_context}"
     
-    if not messages:
-        messages = [system_message]
-    
-    # We don't need to append HumanMessage here if it was already added by a previous node? 
-    # Actually, in our graph, no one added the HumanMessage yet.  
-    # Ideally, we should add it to the state.
-    
-    # Let's construct the prompt messages
-    prompt_messages = list(messages)
-    # If the last message is NOT the current input(text), we append it for the LLM
-    # In `chat_text`, we put `input_text` in state, but didn't add to `messages`.
-    # So we construct the prompt here.
-    
-    # Note: With add_messages, we return the NEW messages to be added.
-    
+    system_message = SystemMessage(content=system_content)
     human_msg = HumanMessage(content=text)
-    prompt_messages.append(human_msg)
+    
+    prompt_messages = [system_message, human_msg]
     
     # Invoke the local LLM
     try:
@@ -97,8 +87,15 @@ def process_input(state: AgentState) -> AgentState:
         raise e
     
     # Filter out <think>...</think> tags from DeepSeek R1
-    content = response.content
-    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+    raw_content = response.content
+    agent_thinking = ""
+    
+    # Extract thinking
+    think_match = re.search(r'<think>(.*?)</think>', raw_content, flags=re.DOTALL)
+    if think_match:
+        agent_thinking = think_match.group(1).strip()
+    
+    content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL).strip()
     
     # Remove emojis
     content = emoji.replace_emoji(content, replace='')
@@ -108,8 +105,14 @@ def process_input(state: AgentState) -> AgentState:
     
     logger.agent_output(f"Agent Response: {content}")
     
-    # Return the new messages to be appended to history
-    return {"response_text": content, "messages": [human_msg, response]}
+    # Return updates
+    # We store agent_thinking and cumilative_context (past) in state to save later
+    return {
+        "response_text": content, 
+        "messages": [human_msg, response],
+        "agent_thinking": agent_thinking,
+        "cumilative_context": past_context
+    }
 
 def synthesize_audio(state: AgentState) -> AgentState:
     """Node to convert text response to audio using Chatterbox TTS (Local)."""
@@ -146,3 +149,51 @@ def synthesize_audio(state: AgentState) -> AgentState:
         raise e
     
     return {"response_audio_path": str(speech_file_path)}
+
+def save_conversation(state: AgentState) -> AgentState:
+    """Node to save the interaction to the database."""
+    session_id = state.get("session_id")
+    user_query = state.get("input_text")
+    agent_answer = state.get("response_text")
+    agent_thinking = state.get("agent_thinking", "")
+    cumilative_context = state.get("cumilative_context", "") # content BEFORE this turn
+    input_audio = state.get("input_audio_path")
+    output_audio = state.get("response_audio_path")
+    
+    if session_id and user_query and agent_answer:
+        # Generate summary of this interaction
+        summary_prompt = f"""Summarize the following interaction concisely in one sentence.
+        
+        User: {user_query}
+        Agent: {agent_answer}
+        
+        Summary:"""
+        
+        query_answer_context = ""
+        try:
+            summary_response = llm.invoke([HumanMessage(content=summary_prompt)])
+            # Clean up thinking tags if any (DeepSeek R1)
+            raw_summary = summary_response.content
+            query_answer_context = re.sub(r'<think>.*?</think>', '', raw_summary, flags=re.DOTALL).strip()
+            logger.info("Generated interaction summary.")
+        except Exception as e:
+            logger.error(f"Failed to generate summary: {e}")
+            query_answer_context = f"User asked about {user_query[:20]}..."
+
+        try:
+            save_interaction(
+                session_id=session_id,
+                user_query=user_query,
+                agent_answer=agent_answer,
+                agent_thinking=agent_thinking,
+                query_answer_context=query_answer_context,
+                cumilative_context=cumilative_context,
+                input_audio_path=input_audio,
+                output_audio_path=output_audio
+            )
+            logger.info(f"Interaction saved for session {session_id}")
+        except Exception as e:
+            logger.error(f"Failed to save interaction: {e}")
+            
+    return {"query_answer_context": query_answer_context}
+

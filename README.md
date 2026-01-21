@@ -1,109 +1,90 @@
-# Voice Agent
+# PyVoiceAgent
 
-A local-first Voice Agent application built with FastAPI, LangGraph, and various local AI models for speech and text processing.
+A powerful, local-first interactive voice assistant built for **offline capability** and **complete control**. This project orchestrates state-of-the-art local AI models to provide a seamless voice-to-voice experience without relying on third-party cloud APIs.
 
-## 🚀 Features
+## Key Highlights
 
--   **Voice-to-Voice Interaction**: Upload audio files, get audio responses.
--   **Text-to-Voice Interaction**: Send text, get audio responses.
--   **Local LLM**: Integrated with **DeepSeek R1** via [Ollama](https://ollama.com/).
--   **Local Speech-to-Text (STT)**: Uses **Faster Whisper** for fast and accurate transcription on CPU/GPU.
--   **Local Text-to-Speech (TTS)**: Uses **Chatterbox TTS** for generating natural-sounding speech.
--   **Conversation Memory**: Maintains context across turns (via thread ID).
+-   **Full Voice Interaction**: Talk to the agent and hear it speak back naturally.
+-   **Persistent Memory**: Remembers your previous conversations across sessions using a robust SQLite database.
+-   **Local Intelligence**: Powered by **DeepSeek R1** (via Ollama) for reasoning and **Faster Whisper** for transcription.
+-   **Intelligent Summarization**: Automatically summarizes interactions to maintain concise context.
 
-## 🛠️ Architecture
+## Pros & Cons
 
-The application uses **LangGraph** to orchestrate the processing pipeline:
-1.  **Transcribe**: Audio inputs are converted to text using Faster Whisper.
-2.  **Process**: The LLM (DeepSeek R1) processes the input (text or transcribed audio) and generates a response.
-    -   *Note: Chains of Thought (`<think>...</think>`) and emojis are automatically filtered out for cleaner speech.*
-3.  **Synthesize**: The text response is converted to audio using Chatterbox.
+| Advantages | Trade-offs |
+| :--- | :--- |
+| **Zero Cost**: No recurring API fees; runs entirely on your hardware. | **Hardware Dependent**: Performance scales with your CPU/GPU power. |
+| **Offline**: Works completely without an internet connection (after initial setup). | **Setup**: Requires installing and managing local models (Ollama, etc.). |
+| **Customizable**: Full access to modify the graph, prompts, and memory logic. | **Model Capability**: Local models (e.g., 8B) are powerful but may lag behind massive cloud models (e.g., GPT-4) in complex reasoning. |
+| **Low Latency**: Eliminates network latency constraints. | **Resource Usage**: Can be memory and compute intensive during inference. |
 
-## 📋 Prerequisites
+## Architecture
 
--   **Python 3.10+** (Recommended)
--   **Ollama**: You must have Ollama installed and running.
-    -   Pull the required model: `ollama pull deepseek-r1:8b`
--   **FFmpeg**: Required by some audio processing libraries (like `soundfile` or `pydub` if used internally).
+The system uses **LangGraph** to manage the conversational flow:
 
-## ⚙️ Installation
+1.  **Transcribe**: `Faster Whisper` converts your voice to text.
+2.  **Context retrieval**: Fetches conversation history and session context from `SQLite`.
+3.  **Process**: `DeepSeek R1` generates a response and "thinks" through the problem.
+4.  **Synthesize**: `Chatterbox TTS` converts the text response back to audio.
+5.  **Save & Summarize**: The interaction is logged, and a summary is generated for future context.
 
-1.  **Clone the repository** (if applicable) or navigate to the project directory.
+## Quick Start
 
-2.  **Create a virtual environment**:
+### Prerequisites
+-   **Python 3.10+**
+-   **Ollama** running locally with the model pulled: `ollama pull deepseek-r1:8b`
+-   **FFmpeg** (often required for audio processing)
+
+### Installation
+
+1.  **Clone & Setup**:
     ```bash
+    git clone https://github.com/abrarshahh/PyVoiceAgent.git
+    cd PyVoiceAgent
     python -m venv .venv
-    # Windows
-    .venv\Scripts\activate
-    # Mac/Linux
-    source .venv/bin/activate
+    .venv\Scripts\activate  # MacOS/Ubuntu: source .venv/bin/activate
     ```
 
-3.  **Install dependencies**:
+2.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
-    *Note: If you have a GPU, you may need to install specific versions of `torch` and `torchaudio` compatible with your CUDA version.*
 
-4.  **Environment Setup**:
-    -   Copy `.env.example` to `.env`.
-    -   Currently, the agent is configured to run fully locally, so API keys might not be strictly necessary unless extending functionality.
-
-## 🏃 Usage
-
-### 1. Start the Server
-
-Run the FastAPI application:
-
-```bash
-python -m fastapi run app/main.py
-```
-Or using uvicorn directly:
-```bash
-uvicorn app.main:app --reload
-```
-
-The API will be available at `http://localhost:8000`.
-
-### 2. API Endpoints
-
-#### **Text Chat** (`POST /chat/text`)
-Send a text message and receive an audio response.
-
--   **URL**: `/chat/text`
--   **Body**:
-    ```json
-    {
-      "text": "Hello, who are you?",
-      "thread_id": "optional-uuid-for-memory"
-    }
+3.  **Run the Server**:
+    ```bash
+    python -m fastapi run app/main.py
     ```
--   **Response**: `audio/wav` file.
 
-#### **Voice Chat** (`POST /chat/voice`)
-Upload an audio file (e.g., mp3, wav) and receive an audio response.
+## API Usage
 
--   **URL**: `/chat/voice`
--   **Body**: `multipart/form-data` with a `file` field.
-    -   `thread_id` can be passed as a query parameter or form field.
--   **Response**: `audio/wav` file.
+The API is simple and RESTful. All endpoints support a `session_id` to track your specific conversation context.
 
-## 📂 Project Structure
-
+### 1. Text Chat
+**POST** `/chat/text`
+```json
+{
+  "text": "Hello, how are you?",
+  "session_id": "optional-custom-session-id"
+}
 ```
-├── app/
-│   ├── main.py          # FastAPI entry point and route handlers
-│   ├── graph.py         # LangGraph workflow definition
-│   ├── nodes.py         # Node functions (Transcribe, Process, Synthesize)
-│   ├── state.py         # State definition (AgentState)
-│   └── logger_config.py # Logging configuration
-├── input_audio/         # Temporary storage for uploaded audio
-├── generated_audio/     # Storage for synthesizer output
-├── requirements.txt     # Python dependencies
-└── .env.example         # Environment variables template
-```
+*Returns: Audio file (.wav)*
 
-## ⚠️ Known Issues / Notes
+### 2. Voice Chat
+**POST** `/chat/voice`
+*   **Form Data**:
+    *   `file`: (Audio file, e.g., mp3/wav)
+    *   `session_id`: (Text, optional)
 
--   **First Run**: The first time you run the application, it will download necessary models for Faster Whisper and Chatterbox TTS. This may take a few minutes.
--   **Performance**: Performance depends heavily on your hardware (CPU vs GPU) since all models are running locally.
+*Returns: Audio file (.wav)*
+
+## Project Structure
+
+-   `app/main.py`: API entry point.
+-   `app/graph.py`: LangGraph workflow definition.
+-   `app/nodes.py`: Core logic for Transcription, LLM processing, and TTS.
+-   `app/database.py`: SQLite storage and context management.
+-   `app/state.py`: Data structures for the agent's state.
+-   `conversation_memory.db`: Local database file (auto-created).
+
+---
+*Built with [FastAPI](https://fastapi.tiangolo.com/), [LangGraph](https://langchain-ai.github.io/langgraph/), and [Ollama](https://ollama.com/).*
