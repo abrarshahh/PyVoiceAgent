@@ -11,5 +11,6 @@ class AgentState(TypedDict):
     cumilative_context: Optional[str]
     query_answer_context: Optional[str]
     response_audio_path: Optional[str]
+    response_segments: Optional[List[str]]
+    audio_chunks: Optional[List[str]]
     messages: Annotated[list, add_messages]
-

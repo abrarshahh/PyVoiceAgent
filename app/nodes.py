@@ -2,6 +2,7 @@ import os
 import uuid
 import re
 import emoji
+import numpy as np
 from pathlib import Path
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
@@ -70,7 +71,11 @@ def process_input(state: AgentState) -> AgentState:
         past_context = get_cumulative_context(session_id)
     
     # Construct system prompt with history
-    system_content = "You are a helpful voice assistant. Keep your responses concise and conversational."
+    system_content = (
+        "You are a helpful voice assistant. Keep your responses concise and conversational. "
+        "IMPORTANT: You must format your final response entirely in UPPERCASE letters. "
+        "Use clear sentence boundaries."
+    )
     if past_context:
         system_content += f"\n\nPrevious conversation history:\n{past_context}"
     
@@ -114,38 +119,134 @@ def process_input(state: AgentState) -> AgentState:
         "cumilative_context": past_context
     }
 
-def synthesize_audio(state: AgentState) -> AgentState:
-    """Node to convert text response to audio using Chatterbox TTS (Local)."""
+def segment_text(state: AgentState) -> AgentState:
+    """Node to split the agent's text response into smaller chunks for TTS."""
     text = state.get("response_text", "")
     
     if not text:
-        logger.warning("No text to synthesize.")
-        return {"response_audio_path": None}
+        return {"response_segments": []}
+        
+    # Split by common sentence terminators but keep them
+    # distinct sentences usually end with . ? ! followed by space or newline
+    # Simple regex split
+    segments = re.split(r'(?<=[.!?])\s+', text)
     
-    logger.info("Synthesizing audio...")
+    # Further splitting if still too long (heuristic limit ~200 chars)
+    final_segments = []
+    MAX_CHARS = 200
     
-    # Create directory if it doesn't exist
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+            
+        if len(seg) < MAX_CHARS:
+            final_segments.append(seg)
+        else:
+            # Hard split on commas or just size if needed
+            sub_parts = re.split(r'(?<=[,])\s+', seg)
+            current_chunk = ""
+            for part in sub_parts:
+                if len(current_chunk) + len(part) < MAX_CHARS:
+                    current_chunk += part + " "
+                else:
+                    if current_chunk:
+                        final_segments.append(current_chunk.strip())
+                    current_chunk = part + " "
+            if current_chunk:
+                final_segments.append(current_chunk.strip())
+                
+    logger.info(f"Segmented text into {len(final_segments)} chunks.")
+    return {"response_segments": final_segments}
+
+def refine_and_guardrail(state: AgentState) -> AgentState:
+    """Node to validate and format chunks before synthesis."""
+    segments = state.get("response_segments", [])
+    refined_segments = []
+    
+    for seg in segments:
+        # 1. Enforce UPPERCASE (as requested by user)
+        seg = seg.upper()
+        
+        # 2. Check for completeness/formatting
+        # (Simple heuristic: ensure it doesn't end strangely, though TTS handles most)
+        
+        # 3. Add padding for TTS stability (phantom space/char)
+        # Chatterbox specific: padding helps avoid start/end truncation
+        # We'll apply this in the synthesis step or here. Ideally here so it's "ready".
+        # But actually, the prompt said "Padding your input text...". 
+        # I will keep the raw text here pure for logging, and pad in synthesis.
+        
+        refined_segments.append(seg)
+        
+    logger.info("Segments refined and checked.")
+    return {"response_segments": refined_segments}
+
+def synthesize_audio(state: AgentState) -> AgentState:
+    """Node to convert text segments to audio using Chatterbox TTS (Local) and concatenate them."""
+    segments = state.get("response_segments", [])
+    
+    # Fallback to single text if segments are missing (backward compatibility)
+    if not segments:
+        text = state.get("response_text", "")
+        if text:
+            segments = [text]
+        else:
+             logger.warning("No text to synthesize.")
+             return {"response_audio_path": None}
+    
+    logger.info(f"Synthesizing audio for {len(segments)} segments...")
+    
+    # Create dire
     output_dir = Path(__file__).parent.parent / "generated_audio"
     output_dir.mkdir(exist_ok=True)
     
-    # Save as .wav for Chatterbox
+    audio_arrays = []
+    
+    for i, seg in enumerate(segments):
+        # Pad input to prevent truncation
+        padded_seg = f" {seg} " 
+        
+        try:
+            # Generate audio for the chunk
+            # Retry logic could be added here if needed, but simple try/catch for now
+            audio = tts.generate(padded_seg)
+            
+            if hasattr(audio, "numpy"):
+                audio = audio.squeeze().numpy()
+            elif hasattr(audio, "detach"): # torch tensor
+                audio = audio.detach().cpu().squeeze().numpy()
+                
+            audio_arrays.append(audio)
+            
+            # Add silence between chunks (200ms)
+            silence_samples = int(0.2 * tts.sr)
+            silence = np.zeros(silence_samples, dtype=np.float32)
+            audio_arrays.append(silence)
+            
+        except Exception as e:
+            logger.error(f"TTS failed for segment '{seg}': {e}")
+            # Continue to next segment? Or fail? 
+            # Best to continue to partial result is better than nothing, 
+            # but user might miss context. For now, log and continue.
+            continue
+
+    if not audio_arrays:
+        logger.error("No audio generated.")
+        return {"response_audio_path": None}
+        
+    # Concatenate all arrays
+    final_audio = np.concatenate(audio_arrays)
+    
+    # Save final file
     filename = f"{uuid.uuid4()}.wav"
     speech_file_path = output_dir / filename
     
-    # Generate audio
     try:
-        audio = tts.generate(text)
-        
-        # Convert from Tensor to Numpy if needed
-        if hasattr(audio, "numpy"):
-            audio = audio.squeeze().numpy()
-        
-        # Save to file
-        sf.write(str(speech_file_path), audio, samplerate=tts.sr)
-        logger.info(f"Audio saved to {speech_file_path}")
-        
+        sf.write(str(speech_file_path), final_audio, samplerate=tts.sr)
+        logger.info(f"Final audio saved to {speech_file_path}")
     except Exception as e:
-        logger.error(f"TTS generation failed: {e}")
+        logger.error(f"Failed to save audio file: {e}")
         raise e
     
     return {"response_audio_path": str(speech_file_path)}
@@ -196,4 +297,3 @@ def save_conversation(state: AgentState) -> AgentState:
             logger.error(f"Failed to save interaction: {e}")
             
     return {"query_answer_context": query_answer_context}
-

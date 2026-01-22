@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from app.state import AgentState
-from app.nodes import transcribe_audio, process_input, synthesize_audio, save_conversation
+from app.nodes import transcribe_audio, process_input, synthesize_audio, save_conversation, segment_text, refine_and_guardrail
 
 # Define the graph
 workflow = StateGraph(AgentState)
@@ -8,6 +8,8 @@ workflow = StateGraph(AgentState)
 # Add nodes
 workflow.add_node("transcribe", transcribe_audio)
 workflow.add_node("process", process_input)
+workflow.add_node("segment", segment_text)
+workflow.add_node("refine", refine_and_guardrail)
 workflow.add_node("synthesize", synthesize_audio)
 workflow.add_node("save_conversation", save_conversation)
 
@@ -16,7 +18,9 @@ workflow.add_node("save_conversation", save_conversation)
 workflow.set_entry_point("transcribe")
 
 workflow.add_edge("transcribe", "process")
-workflow.add_edge("process", "synthesize")
+workflow.add_edge("process", "segment")
+workflow.add_edge("segment", "refine")
+workflow.add_edge("refine", "synthesize")
 workflow.add_edge("synthesize", "save_conversation")
 workflow.add_edge("save_conversation", END)
 
