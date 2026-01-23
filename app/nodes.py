@@ -43,19 +43,23 @@ print("Chatterbox TTS model loaded.")
 
 def transcribe_audio(state: AgentState) -> AgentState:
     """Node to transcribe audio to text using Faster Whisper (Local)."""
-    audio_path = state.get("input_audio_path")
-    
-    # If no audio provided, just return empty update (keeping existing input_text if any)
-    if not audio_path or not os.path.exists(audio_path):
-        return {}
-    
-    # Run transcription
-    segments, info = stt_model.transcribe(audio_path, beam_size=5)
-    
-    # Combine segments into full text
-    transcription_text = "".join([segment.text for segment in segments])
-    
-    return {"input_text": transcription_text}
+    try:
+        audio_path = state.get("input_audio_path")
+        
+        # If no audio provided, just return empty update (keeping existing input_text if any)
+        if not audio_path or not os.path.exists(audio_path):
+            return {}
+        
+        # Run transcription
+        segments, info = stt_model.transcribe(audio_path, beam_size=5)
+        
+        # Combine segments into full text
+        transcription_text = "".join([segment.text for segment in segments])
+        
+        return {"input_text": transcription_text}
+    except Exception as e:
+        logger.error(f"Transcription failed: {e}")
+        return {"input_text": ""}
 
 def process_input(state: AgentState) -> AgentState:
     """Node to process text input and generate a textual response."""
@@ -89,7 +93,13 @@ def process_input(state: AgentState) -> AgentState:
         response = llm.invoke(prompt_messages)
     except Exception as e:
         logger.error(f"LLM invocation failed: {e}")
-        raise e
+        error_msg = "I APOLOGIZE, BUT I AM HAVING TROUBLE THINKING RIGHT NOW."
+        return {
+            "response_text": error_msg,
+            "messages": [human_msg, AIMessage(content=error_msg)],
+            "agent_thinking": f"Error: {str(e)}",
+            "cumilative_context": past_context
+        }
     
     # Filter out <think>...</think> tags from DeepSeek R1
     raw_content = response.content

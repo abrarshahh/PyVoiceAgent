@@ -35,39 +35,43 @@ def get_cumulative_context(session_id: str) -> str:
     Retrieve the cumulative context for the given session_id.
     It fetches the last interaction to construct the context history.
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-    SELECT cumilative_context, user_query, agent_answer 
-    FROM conversations 
-    WHERE session_id = ? 
-    ORDER BY id DESC 
-    LIMIT 1
-    ''', (session_id,))
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+        SELECT cumilative_context, user_query, agent_answer 
+        FROM conversations 
+        WHERE session_id = ? 
+        ORDER BY id DESC 
+        LIMIT 1
+        ''', (session_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return ""
+        
+        # row = (prev_cumilative_context, prev_user_query, prev_agent_answer)
+        prev_context = row[0] or ""
+        prev_query = row[1] or ""
+        prev_answer = row[2] or ""
+        
+        # Construct new context
+        # format: 
+        # Human: ...
+        # AI: ...
+        
+        new_entry = f"Human: {prev_query}\nAI: {prev_answer}\n"
+        
+        if prev_context:
+            return f"{prev_context}\n{new_entry}"
+        else:
+            return new_entry
+    except Exception as e:
+        print(f"Error retrieving context: {e}")
         return ""
-    
-    # row = (prev_cumilative_context, prev_user_query, prev_agent_answer)
-    prev_context = row[0] or ""
-    prev_query = row[1] or ""
-    prev_answer = row[2] or ""
-    
-    # Construct new context
-    # format: 
-    # Human: ...
-    # AI: ...
-    
-    new_entry = f"Human: {prev_query}\nAI: {prev_answer}\n"
-    
-    if prev_context:
-        return f"{prev_context}\n{new_entry}"
-    else:
-        return new_entry
 
 def save_interaction(
     session_id: str,

@@ -46,7 +46,11 @@ async def chat_text(request: TextRequest):
     }
     
     # Run the graph
-    final_state = app_graph.invoke(initial_state, config=config)
+    try:
+        final_state = app_graph.invoke(initial_state, config=config)
+    except Exception as e:
+        logger.error(f"Graph invocation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     audio_path = final_state.get("response_audio_path")
     if not audio_path or not os.path.exists(audio_path):
@@ -69,8 +73,12 @@ async def chat_voice(
     file_ext = Path(file.filename).suffix or ".mp3"
     file_path = INPUT_AUDIO_DIR / f"{file_id}{file_ext}"
     
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        logger.error(f"Failed to save uploaded file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save audio file.")
         
     session_id = session_id or str(uuid.uuid4())
     thread_id = str(uuid.uuid4())
@@ -82,7 +90,11 @@ async def chat_voice(
     }
     
     # Run the graph
-    final_state = app_graph.invoke(initial_state, config=config)
+    try:
+        final_state = app_graph.invoke(initial_state, config=config)
+    except Exception as e:
+        logger.error(f"Graph invocation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     # Cleanup input file (optional, keeping it for debug could be useful)
     # os.remove(file_path)
