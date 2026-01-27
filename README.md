@@ -79,11 +79,13 @@ The API is simple and RESTful. All endpoints support a `session_id` to track you
 
 ## Project Structure
 
--   `app/main.py`: API entry point.
--   `app/graph.py`: LangGraph workflow definition.
--   `app/nodes.py`: Core logic for Transcription, LLM processing, and TTS.
--   `app/database.py`: SQLite storage and context management.
--   `app/state.py`: Data structures for the agent's state.
+-   `app/main.py`: Application entry point.
+-   `app/api/`: FastAPI route definitions.
+-   `app/agents/`: Cognitive agents (LLM logic).
+-   `app/tools/`: Deterministic tools (STT, TTS, Storage, etc.).
+-   `app/workflows/`: LangGraph state and graph definitions.
+-   `app/core/`: Configuration and logging infrastructure.
+-   `app/db/`: Database interaction layer.
 -   `conversation_memory.db`: Local database file (auto-created).
 
 ---

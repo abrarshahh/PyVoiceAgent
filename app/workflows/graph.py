@@ -1,6 +1,15 @@
 from langgraph.graph import StateGraph, END
-from app.state import AgentState
-from app.nodes import transcribe_audio, process_input, synthesize_audio, save_conversation, segment_text, refine_and_guardrail
+from langgraph.checkpoint.memory import MemorySaver
+
+from app.workflows.state import AgentState
+
+# Import nodes from their dedicated locations
+from app.agents.assistant import process_input
+from app.tools.transcriber import transcribe_audio
+from app.tools.segmenter import segment_text
+from app.tools.refiner import refine_and_guardrail
+from app.tools.synthesizer import synthesize_audio
+from app.tools.archiver import save_conversation
 
 # Define the graph
 workflow = StateGraph(AgentState)
@@ -25,6 +34,6 @@ workflow.add_edge("synthesize", "save_conversation")
 workflow.add_edge("save_conversation", END)
 
 # Compile the graph
-from langgraph.checkpoint.memory import MemorySaver
 memory = MemorySaver()
 app_graph = workflow.compile(checkpointer=memory)
+

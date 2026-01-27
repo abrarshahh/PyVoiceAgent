@@ -1,7 +1,7 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+from app.core.config import LOGS_DIR
 
 # Custom Log Level
 AGENT_OUTPUT_LEVEL = 25
@@ -15,8 +15,7 @@ logging.Logger.agent_output = agent_output
 
 def setup_logger():
     """Sets up the comprehensive logging system."""
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    log_dir = LOGS_DIR
     
     # Create formatters
     detailed_formatter = logging.Formatter(
@@ -30,7 +29,6 @@ def setup_logger():
     all_handler.setFormatter(detailed_formatter)
 
     # 2. Warnings (WARNING only)
-    # We can set level WARNING, which catches WARNING, ERROR, CRITICAL
     warnings_handler = RotatingFileHandler(log_dir / "warnings.log", maxBytes=5*1024*1024, backupCount=3)
     warnings_handler.setLevel(logging.WARNING)
     warnings_handler.setFormatter(detailed_formatter)
@@ -45,8 +43,7 @@ def setup_logger():
     agent_handler.setLevel(AGENT_OUTPUT_LEVEL)
     agent_handler.setFormatter(simple_formatter)
     
-    # Filter to ensure ONLY AGENT_OUTPUT level goes here (and maybe higher if we wanted, but request implies separation)
-    # This filter ensures we only get our custom level
+    # Filter to ensure ONLY AGENT_OUTPUT level goes here
     class AgentOutputFilter(logging.Filter):
         def filter(self, record):
             return record.levelno == AGENT_OUTPUT_LEVEL

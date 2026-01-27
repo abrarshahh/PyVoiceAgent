@@ -1,10 +1,7 @@
 import sqlite3
-import json
+from typing import Optional
 from datetime import datetime
-from pathlib import Path
-from typing import Optional, Dict, Any
-
-DB_PATH = Path("conversation_memory.db")
+from app.core.config import DB_PATH
 
 def init_db():
     """Initialize the SQLite database and create the table if it doesn't exist."""
