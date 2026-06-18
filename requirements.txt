@@ -4,6 +4,8 @@ python-multipart
 langgraph
 langchain
 langchain-ollama
+langchain-openai
+langchain-community
 python-dotenv
 chatterbox-tts
 soundfile
@@ -12,3 +14,4 @@ torch
 torchaudio
 faster-whisper
 emoji
+qdrant-client

@@ -1,6 +1,6 @@
 import re
 import emoji
-from langchain_ollama import ChatOllama
+from app.core.llm import get_llm
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.workflows.state import AgentState
 from app.core.logging import get_logger
@@ -8,8 +8,8 @@ from app.db.storage import get_cumulative_context
 
 logger = get_logger(__name__)
 
-# Initialize Local LLM (DeepSeek R1 via Ollama)
-llm = ChatOllama(model="deepseek-r1:8b")
+# Initialize LLM via Factory
+llm = get_llm(json_mode=False)
 
 def process_input(state: AgentState) -> AgentState:
     """Node to process text input and generate a textual response."""
@@ -77,4 +77,3 @@ def process_input(state: AgentState) -> AgentState:
         "agent_thinking": agent_thinking,
         "cumilative_context": past_context
     }
-

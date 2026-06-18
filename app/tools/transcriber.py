@@ -5,11 +5,16 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Initialize Local STT (Faster Whisper)
-# Using 'base' model for speed/quality balance locally. 
-print("Loading Faster Whisper model...")
-stt_model = WhisperModel("base", device="cpu", compute_type="int8")
-print("Faster Whisper model loaded.")
+_stt_model = None
+
+def get_stt_model():
+    global _stt_model
+    if _stt_model is None:
+        print("Loading Faster Whisper model (Legacy Tool)...")
+        from faster_whisper import WhisperModel
+        _stt_model = WhisperModel("base", device="cpu", compute_type="int8")
+        print("Faster Whisper model loaded.")
+    return _stt_model
 
 def transcribe_audio(state: AgentState) -> AgentState:
     """Node to transcribe audio to text using Faster Whisper (Local)."""
@@ -21,7 +26,8 @@ def transcribe_audio(state: AgentState) -> AgentState:
             return {}
         
         # Run transcription
-        segments, info = stt_model.transcribe(audio_path, beam_size=5)
+        model = get_stt_model()
+        segments, info = model.transcribe(audio_path, beam_size=5)
         
         # Combine segments into full text
         transcription_text = "".join([segment.text for segment in segments])
@@ -30,4 +36,3 @@ def transcribe_audio(state: AgentState) -> AgentState:
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
         return {"input_text": ""}
-

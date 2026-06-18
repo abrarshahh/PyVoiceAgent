@@ -3,54 +3,61 @@ import os
 import uuid
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from fastapi.responses import FileResponse
-from app.workflows.graph import app_graph
+from fastapi.responses import FileResponse, JSONResponse
 from app.models.schemas import TextRequest
 from app.core.logging import get_logger
 from app.core.config import INPUT_AUDIO_DIR
+from app.orchestrator.executor import Executor
 
 logger = get_logger(__name__)
 router = APIRouter()
 
-@router.post("/chat/text")
-async def chat_text(request: TextRequest):
-    """
-    Process text input and return a voice response.
-    """
-    # Use provided session_id or generate a new one
-    session_id = request.session_id or str(uuid.uuid4())
-    
-    # Use a unique thread_id for the graph to ensure we start with a clean state
-    thread_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
-    
-    initial_state = {
-        "input_text": request.text,
-        "session_id": session_id
-    }
-    
-    # Run the graph
-    try:
-        final_state = app_graph.invoke(initial_state, config=config)
-    except Exception as e:
-        logger.error(f"Graph invocation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    audio_path = final_state.get("response_audio_path")
-    if not audio_path or not os.path.exists(audio_path):
-        raise HTTPException(status_code=500, detail="Failed to generate audio response.")
-        
-    # Return audio with session_id header
-    headers = {"X-Session-ID": session_id}
-    return FileResponse(audio_path, media_type="audio/wav", filename="response.wav", headers=headers)
+# Initialize Executor (Loads models)
+print("Initializing Global Executor...")
+executor = Executor()
+print("Global Executor Ready.")
 
-@router.post("/chat/voice")
-async def chat_voice(
+@router.post("/text-to-voice")
+async def text_to_voice(request: TextRequest):
+    """
+    Text Input -> Audio Output
+    """
+    print(f"Received text-to-voice request: {request.text}")
+    try:
+        result = executor.process_command(request.text, generate_audio=True)
+        
+        audio_path = result.get("response_audio_path")
+        if not audio_path or not os.path.exists(audio_path):
+             return JSONResponse(content=result)
+
+        headers = {"X-Session-ID": request.session_id or str(uuid.uuid4())}
+        return FileResponse(audio_path, media_type="audio/wav", filename="response.wav", headers=headers)
+        
+    except Exception as e:
+        logger.error(f"Text-to-voice processing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/text-to-text")
+async def text_to_text(request: TextRequest):
+    """
+    Text Input -> Text Output
+    """
+    print(f"Received text-to-text request: {request.text}")
+    try:
+        result = executor.process_command(request.text, generate_audio=False)
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        logger.error(f"Text-to-text processing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/voice-to-voice")
+async def voice_to_voice(
     file: UploadFile = File(...),
     session_id: str = Form(None)
 ):
     """
-    Process voice input (audio file) and return a voice response.
+    Audio Input -> Audio Output
     """
     # Save uploaded file
     file_id = str(uuid.uuid4())
@@ -64,29 +71,18 @@ async def chat_voice(
         logger.error(f"Failed to save uploaded file: {e}")
         raise HTTPException(status_code=500, detail="Failed to save audio file.")
         
-    session_id = session_id or str(uuid.uuid4())
-    thread_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
-        
-    initial_state = {
-        "input_audio_path": str(file_path),
-        "session_id": session_id
-    }
-    
-    # Run the graph
     try:
-        final_state = app_graph.invoke(initial_state, config=config)
-    except Exception as e:
-        logger.error(f"Graph invocation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    # Cleanup input file (optional, keeping it for debug could be useful)
-    # os.remove(file_path)
-    
-    audio_path = final_state.get("response_audio_path")
-    if not audio_path or not os.path.exists(audio_path):
-        raise HTTPException(status_code=500, detail="Failed to generate audio response.")
+        # Use Executor to process (Voice implies TTS response usually, unless specified otherwise)
+        # process_voice_command calls process_command, which defaults to generate_audio=True
+        result = executor.process_voice_command(str(file_path))
         
-    headers = {"X-Session-ID": session_id}
-    return FileResponse(audio_path, media_type="audio/wav", filename="response.wav", headers=headers)
-
+        audio_path = result.get("response_audio_path")
+        if not audio_path or not os.path.exists(audio_path):
+             return JSONResponse(content=result)
+        
+        headers = {"X-Session-ID": session_id or str(uuid.uuid4())}
+        return FileResponse(audio_path, media_type="audio/wav", filename="response.wav", headers=headers)
+        
+    except Exception as e:
+        logger.error(f"Voice-to-voice processing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

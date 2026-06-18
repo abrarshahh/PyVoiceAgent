@@ -20,3 +20,5 @@ INPUT_AUDIO_DIR.mkdir(exist_ok=True)
 GENERATED_AUDIO_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
 
+# API Keys
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

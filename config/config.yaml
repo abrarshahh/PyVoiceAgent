@@ -1,0 +1,28 @@
+# PyVoiceAgent Configuration
+
+# LLM Configuration
+LLM_PROVIDER: "ollama" # "ollama" or "openai"
+LLM_MODEL: "deepseek-r1:8b" # Local Ollama model (e.g. deepseek-r1:8b) or OpenAI model (e.g. gpt-4o, gpt-4o-mini)
+LLM_BASE_URL: "http://localhost:11434"
+EMBEDDING_MODEL: "text-embedding-3-small" # OpenAI embedding model (used if provider is openai)
+
+# STT Configuration
+WHISPER_MODEL_SIZE: "base"
+WHISPER_DEVICE: "cpu" # or "cuda"
+
+# TTS Configuration
+TTS_VOICE: "en_us_male" 
+TTS_SPEED: 1.0
+
+# Memory Configuration
+QDRANT_URL: "${QDRANT_URL}"
+QDRANT_API_KEY: "${QDRANT_API_KEY}"
+QDRANT_COLLECTION: "pyvoiceagent_memory"
+
+# Agent Configuration
+MAX_RETRY_ATTEMPTS: 3
+EXECUTION_TIMEOUT: 60 # seconds
+
+# API Configuration
+API_HOST: "0.0.0.0"
+API_PORT: 8000

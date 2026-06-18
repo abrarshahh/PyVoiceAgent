@@ -14,4 +14,3 @@ class AgentState(TypedDict):
     response_segments: Optional[List[str]]
     audio_chunks: Optional[List[str]]
     messages: Annotated[list, add_messages]
-
