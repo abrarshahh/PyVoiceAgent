@@ -103,4 +103,3 @@ def save_interaction(
 
 # Initialize on module load temporarily or call explicit init
 init_db()
-

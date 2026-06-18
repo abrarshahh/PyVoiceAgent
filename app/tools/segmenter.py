@@ -43,4 +43,3 @@ def segment_text(state: AgentState) -> AgentState:
                 
     logger.info(f"Segmented text into {len(final_segments)} chunks.")
     return {"response_segments": final_segments}
-

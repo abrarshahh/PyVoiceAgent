@@ -19,4 +19,3 @@ def refine_and_guardrail(state: AgentState) -> AgentState:
         
     logger.info("Segments refined and checked.")
     return {"response_segments": refined_segments}
-

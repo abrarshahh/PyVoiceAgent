@@ -1,5 +1,5 @@
 import re
-from langchain_ollama import ChatOllama
+from app.core.llm import get_llm
 from langchain_core.messages import HumanMessage
 from app.workflows.state import AgentState
 from app.core.logging import get_logger
@@ -8,7 +8,7 @@ from app.db.storage import save_interaction
 logger = get_logger(__name__)
 
 # Initialize separate LLM instance for summarization
-llm = ChatOllama(model="deepseek-r1:8b")
+llm = get_llm(json_mode=False)
 
 def save_conversation(state: AgentState) -> AgentState:
     """Node to save the interaction to the database."""
@@ -56,4 +56,3 @@ def save_conversation(state: AgentState) -> AgentState:
             logger.error(f"Failed to save interaction: {e}")
             
     return {"query_answer_context": query_answer_context}
-
