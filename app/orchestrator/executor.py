@@ -13,6 +13,7 @@ class Executor:
         self._tts = None
         self._memory = None
         self._tools = None
+        self._mcp_manager = None
 
     @property
     def stt(self):
@@ -57,10 +58,18 @@ class Executor:
         return self._memory
 
     @property
+    def mcp_manager(self):
+        if self._mcp_manager is None:
+            from app.core.mcp_manager import MCPManager
+            self._mcp_manager = MCPManager.get_instance()
+        return self._mcp_manager
+
+    @property
     def tools(self):
         if self._tools is None:
             from app.tools.filesystem import ListDirTool, ReadFileTool, WriteFileTool
             from app.tools.python_runner import PythonRunnerTool
+            
             self._tools = {
                 "list_directory": ListDirTool(),
                 "read_file": ReadFileTool(),
@@ -69,7 +78,7 @@ class Executor:
             }
         return self._tools
 
-    def process_command(self, text: str, generate_audio: bool = True) -> Dict[str, Any]:
+    async def process_command(self, text: str, generate_audio: bool = True, plan_only: bool = False) -> Dict[str, Any]:
         """
         Process a text command through the agentic pipeline.
         """
@@ -79,7 +88,8 @@ class Executor:
             "plan": None,
             "execution_log": [],
             "response_text": "",
-            "response_audio_path": ""
+            "response_audio_path": "",
+            "status": "completed"
         }
         
         if not text:
@@ -99,37 +109,102 @@ class Executor:
         
         if intent_res.intent == "task_execution":
             # 4. Planning
-            plan = self.planner.create_plan(text, context=context_str)
-            results["plan"] = plan.dict()
+            plan = await self.planner.create_plan(text, context=context_str)
+            results["plan"] = plan.model_dump() if hasattr(plan, "model_dump") else plan.dict()
+            
+            if plan_only:
+                results["status"] = "pending_permission"
+                results["past_context"] = context_str
+                return results
             
             # 5. Execution
             execution_log = []
             for step in plan.steps:
                 tool_name = step.tool_name
-                tool = self.tools.get(tool_name)
                 
-                if tool:
-                    print(f"Executing {tool_name} with {step.arguments}...")
-                    tool_res = tool.execute(**step.arguments)
-                    execution_log.append({
-                        "step_id": step.step_id,
-                        "tool": tool_name,
-                        "output": tool_res.output,
-                        "error": tool_res.error,
-                        "success": tool_res.success
-                    })
+                # Check MCP tools first
+                try:
+                    mcp_tools = await self.mcp_manager.list_tools()
+                    mcp_tool_info = next((t for t in mcp_tools if t["name"] == tool_name), None)
+                except Exception as e:
+                    print(f"Error checking MCP tools: {e}")
+                    mcp_tool_info = None
+                
+                if mcp_tool_info:
+                    server_name = mcp_tool_info["server_name"]
+                    from app.core.permission_gate import request_permission
+                    approved = request_permission(tool_name, step.arguments)
                     
-                    # Stop on critical failure (optional logic)
-                    if not tool_res.success:
-                        print(f"Step {step.step_id} failed: {tool_res.error}")
+                    if not approved:
+                        print(f"Execution of step {step.step_id} ({tool_name}) on MCP server '{server_name}' was denied by user.")
+                        execution_log.append({
+                            "step_id": step.step_id,
+                            "tool": tool_name,
+                            "output": None,
+                            "error": "Permission denied by user",
+                            "success": False
+                        })
+                        break
+                    
+                    print(f"Executing MCP tool '{tool_name}' on server '{server_name}' with {step.arguments}...")
+                    try:
+                        output = await self.mcp_manager.call_tool(server_name, tool_name, step.arguments)
+                        execution_log.append({
+                            "step_id": step.step_id,
+                            "tool": tool_name,
+                            "output": output,
+                            "error": None,
+                            "success": True
+                        })
+                    except Exception as e:
+                        execution_log.append({
+                            "step_id": step.step_id,
+                            "tool": tool_name,
+                            "output": None,
+                            "error": str(e),
+                            "success": False
+                        })
                         break
                 else:
-                     execution_log.append({
-                        "step_id": step.step_id,
-                        "tool": tool_name,
-                        "error": "Tool not found",
-                        "success": False
-                    })
+                    # Fallback to local tool
+                    tool = self.tools.get(tool_name)
+                    if tool:
+                        from app.core.permission_gate import request_permission
+                        approved = request_permission(tool_name, step.arguments)
+                        
+                        if not approved:
+                            print(f"Execution of step {step.step_id} ({tool_name}) was denied by user.")
+                            execution_log.append({
+                                "step_id": step.step_id,
+                                "tool": tool_name,
+                                "output": None,
+                                "error": "Permission denied by user",
+                                "success": False
+                            })
+                            break
+                        
+                        print(f"Executing local tool '{tool_name}' with {step.arguments}...")
+                        tool_res = tool.execute(**step.arguments)
+                        execution_log.append({
+                            "step_id": step.step_id,
+                            "tool": tool_name,
+                            "output": tool_res.output,
+                            "error": tool_res.error,
+                            "success": tool_res.success
+                        })
+                        
+                        # Stop on critical failure (optional logic)
+                        if not tool_res.success:
+                            print(f"Step {step.step_id} failed: {tool_res.error}")
+                            break
+                    else:
+                        execution_log.append({
+                            "step_id": step.step_id,
+                            "tool": tool_name,
+                            "error": f"Tool '{tool_name}' not found locally or on any MCP server",
+                            "success": False
+                        })
+                        break
             
             results["execution_log"] = execution_log
             
@@ -159,7 +234,104 @@ class Executor:
         
         return results
 
-    def process_voice_command(self, audio_path: str) -> Dict[str, Any]:
+    async def execute_plan(self, plan: Any, text: str, generate_audio: bool = True, past_context: str = "") -> Dict[str, Any]:
+        """
+        Execute a pre-approved plan without gating it with a terminal permission check.
+        """
+        from app.schemas.plan_schema import ExecutionPlan
+        
+        # Convert dict to ExecutionPlan if necessary
+        if isinstance(plan, dict):
+            plan = ExecutionPlan(**plan)
+            
+        print(f"Executing pre-approved plan for task: {text}")
+        
+        execution_log = []
+        for step in plan.steps:
+            tool_name = step.tool_name
+            
+            # Check MCP tools first
+            try:
+                mcp_tools = await self.mcp_manager.list_tools()
+                mcp_tool_info = next((t for t in mcp_tools if t["name"] == tool_name), None)
+            except Exception as e:
+                print(f"Error checking MCP tools: {e}")
+                mcp_tool_info = None
+            
+            if mcp_tool_info:
+                server_name = mcp_tool_info["server_name"]
+                print(f"Executing MCP tool '{tool_name}' on server '{server_name}' with {step.arguments}...")
+                try:
+                    output = await self.mcp_manager.call_tool(server_name, tool_name, step.arguments)
+                    execution_log.append({
+                        "step_id": step.step_id,
+                        "tool": tool_name,
+                        "output": output,
+                        "error": None,
+                        "success": True
+                    })
+                except Exception as e:
+                    execution_log.append({
+                        "step_id": step.step_id,
+                        "tool": tool_name,
+                        "output": None,
+                        "error": str(e),
+                        "success": False
+                    })
+                    break
+            else:
+                # Fallback to local tool
+                tool = self.tools.get(tool_name)
+                if tool:
+                    print(f"Executing local tool '{tool_name}' with {step.arguments}...")
+                    tool_res = tool.execute(**step.arguments)
+                    execution_log.append({
+                        "step_id": step.step_id,
+                        "tool": tool_name,
+                        "output": tool_res.output,
+                        "error": tool_res.error,
+                        "success": tool_res.success
+                    })
+                    
+                    if not tool_res.success:
+                        print(f"Step {step.step_id} failed: {tool_res.error}")
+                        break
+                else:
+                    execution_log.append({
+                        "step_id": step.step_id,
+                        "tool": tool_name,
+                        "error": f"Tool '{tool_name}' not found locally or on any MCP server",
+                        "success": False
+                    })
+                    break
+                    
+        # 6. Response Generation
+        response_text = self.response_generator.generate_response(text, execution_log)
+        
+        # 7. Add to Memory
+        if self.memory:
+            self.memory.add_memory(f"User Request: {text}\nAction: Executed task\nResult: {response_text}")
+            
+        # 8. TTS (Conditional)
+        response_audio_path = ""
+        if generate_audio:
+            tts_res = self.tts.execute(text=response_text)
+            if tts_res.success:
+                response_audio_path = tts_res.output
+            else:
+                print(f"TTS failed: {tts_res.error}")
+                
+        return {
+            "transcription": text,
+            "intent": "task_execution",
+            "plan": plan.model_dump() if hasattr(plan, "model_dump") else plan.dict(),
+            "execution_log": execution_log,
+            "response_text": response_text,
+            "response_audio_path": response_audio_path,
+            "status": "completed"
+        }
+
+    async def process_voice_command(self, audio_path: str) -> Dict[str, Any]:
         """
         Full pipeline: Audio -> Text -> [Process Command]
         """
@@ -177,10 +349,11 @@ class Executor:
                 "response_audio_path": ""
             }
             
-        return self.process_command(text)
+        return await self.process_command(text)
 
 if __name__ == "__main__":
     # Test
+    import asyncio
     executor = Executor()
-    # res = executor.process_voice_command("path/to/test.wav")
+    # res = asyncio.run(executor.process_voice_command("path/to/test.wav"))
     # print(res)

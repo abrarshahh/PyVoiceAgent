@@ -22,7 +22,12 @@ class MemoryAgent:
             return
 
         print(f"Connecting to Qdrant at {self.qdrant_url}...")
-        self.client = QdrantClient(url=self.qdrant_url, api_key=self.qdrant_key)
+        # If url is HTTPS and cloud-based, default port should be 443
+        port = None
+        if self.qdrant_url.startswith("https://") and ":" not in self.qdrant_url.replace("https://", ""):
+            port = 443
+            
+        self.client = QdrantClient(url=self.qdrant_url, port=port, api_key=self.qdrant_key)
         
         # Initialize Embeddings
         self.embeddings = get_embeddings()

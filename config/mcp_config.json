@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "system_apps": {
+      "command": ".venv/Scripts/python",
+      "args": [
+        "-m",
+        "app.mcp.system_apps_server"
+      ]
+    }
+  }
+}
