@@ -44,3 +44,8 @@ logs/
 *.sqlite3
 *.db
 *.db-journal
+
+propmt_plan.md
+plan.md
+task.md
+DECISIONS.md
