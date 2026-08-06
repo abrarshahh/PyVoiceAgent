@@ -7,19 +7,19 @@ from fastapi.testclient import TestClient
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.main import app
-from app.api.routes import executor
-from app.schemas.plan_schema import ExecutionPlan, ToolCall
+from edgevoice.api.server import app
+from edgevoice.api.routes import executor
+from edgevoice.schemas.plan import ExecutionPlan, ToolCall
 
 class TestAPIPermissions(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         
         # Reset permission_manager pending tasks
-        from app.core import permission_manager
+        from edgevoice.core import permission_manager
         permission_manager._pending_tasks.clear()
 
-    @patch('app.api.routes.executor.process_command')
+    @patch('edgevoice.api.routes.executor.process_command')
     def test_text_to_text_chat_intent(self, mock_process_command):
         """Verify chat intent returns immediately."""
         # Create an async mock helper since process_command is async
@@ -39,7 +39,7 @@ class TestAPIPermissions(unittest.TestCase):
         self.assertEqual(data["status"], "completed")
         self.assertEqual(data["response_text"], "Hello there!")
 
-    @patch('app.api.routes.executor.process_command')
+    @patch('edgevoice.api.routes.executor.process_command')
     def test_text_to_text_task_intent_gating(self, mock_process_command):
         """Verify task execution intent is gated and saved as pending."""
         mock_plan = {
@@ -68,15 +68,15 @@ class TestAPIPermissions(unittest.TestCase):
         self.assertIn("plan", data)
         
         # Check that it is saved in permission_manager
-        from app.core import permission_manager
+        from edgevoice.core import permission_manager
         pending_task = permission_manager.get_pending_task("session-123")
         self.assertIsNotNone(pending_task)
         self.assertEqual(pending_task["original_text"], "open browser")
 
-    @patch('app.api.routes.executor.execute_plan')
+    @patch('edgevoice.api.routes.executor.execute_plan')
     def test_permissions_respond_approval(self, mock_execute_plan):
         """Verify that approving a pending task executes the plan."""
-        from app.core import permission_manager
+        from edgevoice.core import permission_manager
         
         # Manually save a pending task
         permission_manager.add_pending_task(
@@ -113,7 +113,7 @@ class TestAPIPermissions(unittest.TestCase):
 
     def test_permissions_respond_rejection(self):
         """Verify that rejecting a pending task clears it without executing."""
-        from app.core import permission_manager
+        from edgevoice.core import permission_manager
         permission_manager.add_pending_task(
             session_id="session-789",
             plan={"goal": "test", "steps": []},

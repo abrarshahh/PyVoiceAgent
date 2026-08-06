@@ -4,7 +4,7 @@
       "command": ".venv/Scripts/python",
       "args": [
         "-m",
-        "app.mcp.system_apps_server"
+        "edgevoice.core.system_apps_server"
       ]
     }
   }

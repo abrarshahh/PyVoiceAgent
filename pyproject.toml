@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edgevoice"
+version = "0.1.0"
+description = "Edge-ready personal voice agent: local-first, MCP-driven, sandboxed."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Abrar Shah", email = "abrarshah478@gmail.com"},
+]
+requires-python = ">=3.10"
+keywords = ["voice-agent", "mcp", "edge", "local-first", "ai-assistant"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    # Web framework
+    "fastapi[standard]>=0.115",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic>=2.8",
+
+    # LLM & Core orchestrator
+    "mcp>=1.0",
+    "llama-cpp-python>=0.3",
+    "pywhispercpp>=1.2",
+    "piper-tts>=1.2",
+    "silero-vad>=5.1",
+    "openwakeword>=0.6",
+    "sqlite-vec>=0.1",
+    "sentence-transformers>=3.0",
+    "pyyaml>=6.0",
+    "psutil>=6.0",
+    "typer>=0.12",
+
+    # Langchain and dot-env (kept for Phase 0/1 transition)
+    "langchain>=0.3",
+    "langchain-openai>=0.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "pip-audit>=2.7",
+    "maturin>=1.7",
+]
+
+[project.scripts]
+edgevoice = "edgevoice.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["edgevoice*"]
+
+[tool.setuptools.package-data]
+edgevoice = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast, no external services",
+    "integration: needs Ollama + a model file",
+    "golden: recorded transcripts -> expected plans",
+    "security: prompt-injection + sandbox regression",
+]
+asyncio_mode = "auto"
+testpaths = ["tests"]

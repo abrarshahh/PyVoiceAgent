@@ -6,12 +6,12 @@ from unittest.mock import patch, MagicMock
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.core.permission_gate import request_permission
-from app.tools.chrome_tool import ChromeAccessTool
-from app.tools.gallery_tool import GalleryAccessTool
-from app.tools.social_tool import SocialAccessTool
-from app.orchestrator.executor import Executor
-from app.schemas.plan_schema import ExecutionPlan, ToolCall
+from edgevoice.core.permission_gate import request_permission
+from edgevoice.tools.chrome_legacy import ChromeAccessTool
+from edgevoice.tools.gallery_legacy import GalleryAccessTool
+from edgevoice.tools.social_legacy import SocialAccessTool
+from edgevoice.orchestrator.executor import Executor
+from edgevoice.schemas.plan import ExecutionPlan, ToolCall
 
 class TestPermissionGateAndTools(unittest.TestCase):
 
@@ -33,45 +33,25 @@ class TestPermissionGateAndTools(unittest.TestCase):
         res = request_permission("dummy_tool", {})
         self.assertFalse(res)
 
-    @patch('webbrowser.open')
-    def test_chrome_tool(self, mock_webbrowser):
-        """Verify ChromeAccessTool opens search and URLs correctly."""
+    def test_chrome_tool_deprecated(self):
+        """Verify ChromeAccessTool raises NotImplementedError."""
         tool = ChromeAccessTool()
-        
-        # Test URL opening
-        res = tool.execute(url="https://google.com")
-        self.assertTrue(res.success)
-        mock_webbrowser.assert_called_with("https://google.com")
-        
-        # Test Search query opening
-        res = tool.execute(search_query="Gemini AI")
-        self.assertTrue(res.success)
-        mock_webbrowser.assert_called_with("https://www.google.com/search?q=Gemini%20AI")
+        with self.assertRaises(NotImplementedError):
+            tool.execute(url="https://google.com")
 
-    def test_gallery_tool_list(self):
-        """Verify GalleryAccessTool list action runs successfully."""
+    def test_gallery_tool_deprecated(self):
+        """Verify GalleryAccessTool raises NotImplementedError."""
         tool = GalleryAccessTool()
-        res = tool.execute(action="list")
-        self.assertTrue(res.success)
-        self.assertIn("images", res.output)
-        self.assertIn("directory", res.output)
+        with self.assertRaises(NotImplementedError):
+            tool.execute(action="list")
 
-    @patch('webbrowser.open')
-    def test_social_tool(self, mock_webbrowser):
-        """Verify SocialAccessTool constructs correct social media URLs."""
+    def test_social_tool_deprecated(self):
+        """Verify SocialAccessTool raises NotImplementedError."""
         tool = SocialAccessTool()
-        
-        # Instagram username profile
-        res = tool.execute(platform="instagram", username="cristiano")
-        self.assertTrue(res.success)
-        mock_webbrowser.assert_called_with("https://www.instagram.com/cristiano/")
-        
-        # Twitter search
-        res = tool.execute(platform="twitter", search_query="ai news")
-        self.assertTrue(res.success)
-        mock_webbrowser.assert_called_with("https://x.com/search?q=ai%20news")
+        with self.assertRaises(NotImplementedError):
+            tool.execute(platform="instagram", username="cristiano")
 
-    @patch('app.core.permission_gate.request_permission', return_value=False)
+    @patch('edgevoice.core.permission_gate.request_permission', return_value=False)
     def test_executor_gating_denied(self, mock_request_permission):
         """Verify that when permission is denied, the executor aborts execution."""
         executor = Executor()
@@ -86,29 +66,23 @@ class TestPermissionGateAndTools(unittest.TestCase):
         )
         
         # Inject mocks directly into the private fields of Executor to bypass real agent loading
-        executor._planner = MagicMock()
-        executor._planner.create_plan.return_value = mock_plan
+        executor.planner = MagicMock()
+        executor.planner.create_plan.return_value = mock_plan
         
-        executor._intent_classifier = MagicMock()
-        executor._intent_classifier.classify.return_value = MagicMock(intent="task_execution", confidence=1.0)
+        executor.intent_classifier = MagicMock()
+        executor.intent_classifier.classify.return_value = MagicMock(intent="task_execution", confidence=1.0)
         
-        executor._response_generator = MagicMock()
-        executor._response_generator.generate_response.return_value = "Denied."
-        
-        executor._memory = MagicMock()
-        executor._memory.retrieve_memory.return_value = []
-        
-        executor._tts = MagicMock()
-        
-        res = executor.process_command("Open Chrome to google.com", generate_audio=False)
-        
-        # Assert that permission request was triggered
-        mock_request_permission.assert_called_once()
-        
-        # Verify execution log shows permission denied
-        self.assertEqual(len(res["execution_log"]), 1)
-        self.assertFalse(res["execution_log"][0]["success"])
-        self.assertEqual(res["execution_log"][0]["error"], "Permission denied by user")
+        # Mock generate_response import from edgevoice.agents.assistant
+        with patch('edgevoice.orchestrator.executor.generate_response', return_value={"response_text": "Denied."}):
+            res = executor.process_command("Open Chrome to google.com", generate_audio=False)
+            
+            # Assert that permission request was triggered
+            mock_request_permission.assert_called_once()
+            
+            # Verify execution log shows permission denied
+            self.assertEqual(len(res["execution_log"]), 1)
+            self.assertFalse(res["execution_log"][0]["success"])
+            self.assertEqual(res["execution_log"][0]["error"], "Permission denied by user")
 
 if __name__ == "__main__":
     unittest.main()

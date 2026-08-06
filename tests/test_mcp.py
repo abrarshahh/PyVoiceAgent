@@ -6,9 +6,9 @@ from unittest.mock import patch, MagicMock
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.core.mcp_manager import MCPManager
-from app.orchestrator.executor import Executor
-from app.schemas.plan_schema import ExecutionPlan, ToolCall
+from edgevoice.core.mcp import MCPManager
+from edgevoice.orchestrator.executor import Executor
+from edgevoice.schemas.plan import ExecutionPlan, ToolCall
 
 class TestMCPIntegration(unittest.IsolatedAsyncioTestCase):
 
@@ -58,8 +58,9 @@ class TestMCPIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Directory:", res)
         self.assertIn("Images:", res)
 
-    @patch('app.core.permission_gate.request_permission', return_value=True)
-    async def test_executor_with_mcp_success(self, mock_request_permission):
+    @patch('edgevoice.orchestrator.executor.request_permission', return_value=True)
+    @patch('edgevoice.orchestrator.executor.generate_response', return_value={"response_text": "Successfully completed MCP task."})
+    async def test_executor_with_mcp_success(self, mock_generate_response, mock_request_permission):
         """Verify the Executor routes tool execution to MCP server when permission is granted."""
         executor = Executor()
         
@@ -73,15 +74,13 @@ class TestMCPIntegration(unittest.IsolatedAsyncioTestCase):
         
         # Inject mocks to avoid real LLM calls
         from unittest.mock import AsyncMock
-        executor._planner = MagicMock()
-        executor._planner.create_plan = AsyncMock(return_value=mock_plan)
-        executor._intent_classifier = MagicMock()
-        executor._intent_classifier.classify.return_value = MagicMock(intent="task_execution", confidence=1.0)
-        executor._response_generator = MagicMock()
-        executor._response_generator.generate_response.return_value = "Successfully completed MCP task."
-        executor._memory = MagicMock()
-        executor._memory.retrieve_memory.return_value = []
-        executor._tts = MagicMock()
+        executor.planner = MagicMock()
+        executor.planner.create_plan = AsyncMock(return_value=mock_plan)
+        executor.intent_classifier = MagicMock()
+        executor.intent_classifier.classify.return_value = MagicMock(intent="task_execution", confidence=1.0)
+        executor.memory = MagicMock()
+        executor.memory.retrieve_memory.return_value = []
+        executor.tts = MagicMock()
         
         # Mock mcp_manager call_tool directly on the executor's instance
         executor.mcp_manager.call_tool = AsyncMock(return_value="Opened URL https://mcp.dev")

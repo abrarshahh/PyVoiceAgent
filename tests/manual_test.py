@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from dotenv import load_dotenv
 load_dotenv()
 
-from app.orchestrator.executor import Executor
+from edgevoice.orchestrator.executor import Executor
 
 def test_pipeline():
     print("--- Starting Manual Verification ---")
